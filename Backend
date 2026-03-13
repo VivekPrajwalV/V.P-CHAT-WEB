@@ -1,0 +1,61 @@
+const express = require('express');
+const app = express();
+const http = require('http').createServer(app);
+const io = require('socket.io')(http, {
+  maxHttpBufferSize: 5e8 
+});
+const path = require('path');
+
+app.use(express.static(path.join(__dirname)));
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+io.on('connection', (socket) => {
+  console.log('A user connected:', socket.id);
+
+socket.on('request-peer-id', (data) => {
+    // Send your ID to the other person in the room
+    socket.to(data.room).emit('get-peer-id', { requesterSid: socket.id });
+});
+
+socket.on('send-back-id', (data) => {
+    io.to(data.to).emit('peer-id-receive', data.myPeerId);
+});
+  socket.on('join room', (roomCode) => {
+    const MAX_ROOM_SIZE = 2;
+    const room = io.sockets.adapter.rooms.get(roomCode);
+    const numClients = room ? room.size : 0;
+
+    if (numClients < MAX_ROOM_SIZE) {
+      socket.join(roomCode);
+      socket.emit('joined success', roomCode);
+    } else {
+      socket.emit('error message', 'This room is full!');
+    }
+  });
+
+  // Relay Chat Messages to everyone in the room except sender
+  socket.on('chat message', (data) => {
+    socket.to(data.room).emit('chat message', data);
+  });
+
+  // Typing Indicators
+  socket.on('typing', (data) => {
+    socket.to(data.room).emit('typing', data);
+  });
+
+  socket.on('stop typing', (data) => {
+    socket.to(data.room).emit('stop typing');
+  });
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected');
+  });
+});
+
+const PORT = process.env.PORT || 3000;
+http.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
