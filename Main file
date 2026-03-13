@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>V.P CHAT WEB</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+    <style>
+        /* --- 1. SHARED BASE STYLES --- */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body, html { height: 100dvh; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
+
+        /* --- 2. LANDING PAGE STYLES --- */
+        .main-wrapper {
+            height: 100%; width: 100%;
+            background: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)), url('4.png') no-repeat center center; 
+            background-size: cover; display: flex; flex-direction: column;
+        }
+        nav { display: flex; flex-direction: column; align-items: center; padding: 15px; text-align: center; color: white; }
+        @media (min-width: 768px) { nav { flex-direction: row; justify-content: space-between; padding: 20px 50px; } }
+        .logo-text { font-weight: bold; font-size: 1.2rem; text-transform: uppercase; }
+        .brand-signature { font-family: 'Edwardian Script ITC', cursive; font-size: 2.5rem; }
+        
+        .content-area { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 50px; }
+        .slot-box {
+            width: 90%; max-width: 550px; min-height: 180px; padding: 20px; border-radius: 20px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            position: relative; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.18); animation: float 6s ease-in-out infinite;
+        }
+        @keyframes float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-10px); } }
+        .dark-slot { background-color: rgba(19, 36, 29, 0.75); color: #f0f0f0; }
+        .light-slot { background-color: rgba(216, 219, 217, 0.6); color: #13241d; }
+        .inputs-row { display: flex; gap: 10px; margin-top: 20px; }
+        .line-input { width: 40px; border: none; background: transparent; border-bottom: 3px solid #f0f0f0; text-align: center; font-size: 1.5rem; color: white; outline: none; }
+        .light-slot .line-input { border-bottom: 3px solid #13241d; color: #13241d; }
+        .connect-btn { position: absolute; right: -25px; top: 50%; transform: translateY(-50%); background: transparent; border: none; cursor: pointer; }
+        @media (max-width: 767px) { .connect-btn { right: 10px; bottom: 10px; top: auto; transform: none; } }
+        .connect-btn svg { width: 50px; height: 50px; fill: #66d9e8; }
+
+        /* --- 3. CHAT INTERFACE STYLES --- */
+        #chat-interface { 
+            display: none; height: 100%; flex-direction: column; position: relative; background: #fdf8f0; 
+        }
+        .mesh-bg {
+            position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; z-index: 0;
+            background-image: radial-gradient(at 0% 0%, hsla(197, 65%, 88%, 1) 0px, transparent 50%),
+                              radial-gradient(at 85% 5%, hsla(234, 45%, 78%, 1) 0px, transparent 50%),
+                              radial-gradient(at 90% 85%, hsla(335, 70%, 93%, 1) 0px, transparent 50%);
+            filter: blur(60px); animation: mesh-move 20s ease-in-out infinite alternate;
+        }
+        @keyframes mesh-move { 0% { transform: translate(0, 0); } 100% { transform: translate(-2%, 2%); } }
+
+        header { display: flex; justify-content: space-between; align-items: center; padding: 20px 25px; z-index: 10; flex-shrink: 0; }
+        .status-dot { width: 8px; height: 8px; background: #2ecc71; border-radius: 50%; display: inline-block; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(46, 204, 113, 0); } }
+
+        #messages-container { flex-grow: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 30px; z-index: 10; }
+        
+        .message-wrapper { display: flex; flex-direction: column; position: relative; max-width: 80%; animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        .message-wrapper.sent { align-self: flex-end; align-items: flex-end; }
+        .message-wrapper.received { align-self: flex-start; align-items: flex-start; }
+
+        .bubble { padding: 12px 18px; border-radius: 20px; position: relative; font-size: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .sent .bubble { background: #e1f4cb; border: 1px solid #c5e1a5; border-bottom-right-radius: 5px; }
+        .received .bubble { background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.5); border-bottom-left-radius: 5px; }
+        
+        .timestamp { display: block; font-size: 10px; color: #777; margin-top: 5px; }
+        .avatar { width: 35px; height: 35px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1px solid #444; font-size: 18px; margin-top: 5px; background: #76bca6; }
+
+        @keyframes popIn { from { opacity: 0; transform: scale(0.8) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+
+        .bottom-bar { padding: 10px 15px 25px; z-index: 10; display: flex; align-items: center; gap: 10px; }
+        .input-container {
+            background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(10px);
+            border-radius: 30px; display: flex; align-items: center; padding: 5px 15px;
+            flex-grow: 1; border: 1px solid rgba(255, 255, 255, 0.4);
+        }
+        .input-container input { border: none; background: transparent; flex-grow: 1; padding: 12px; outline: none; font-size: 16px; }
+        .send-btn { cursor: pointer; font-size: 20px; background:none; border:none; }
+
+        /* --- VOICE NOTE ADDITIONS --- */
+        .mic-btn.recording i {
+            color: #ff4757;
+            animation: pulse-red 1.5s infinite;
+        }
+        @keyframes pulse-red {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+        .audio-msg {
+            max-width: 100%;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="main-wrapper" id="landing-page">
+        <nav>
+            <div class="logo-text">V.P CHAT WEB</div>
+            <div class="brand-signature">New Way To Chat</div>
+        </nav>
+        <div class="content-area">
+            <div class="slot-box dark-slot">
+                <div class="slot-label">Your Cute Number</div>
+                <div id="my-number-display" class="inputs-row"></div>
+            </div>
+            <div class="slot-box light-slot">
+                <div class="slot-label">Connect Cute Number</div>
+                <div class="inputs-row">
+                    <input type="text" maxlength="1" class="line-input conn-in">
+                    <input type="text" maxlength="1" class="line-input conn-in">
+                    <input type="text" maxlength="1" class="line-input conn-in">
+                    <input type="text" maxlength="1" class="line-input conn-in">
+                    <input type="text" maxlength="1" class="line-input conn-in">
+                </div>
+                <div id="room-error" style="color: #ff4757; font-size: 14px; margin-top: 10px; display: none;">
+                                       This room is full! Please try another code.
+                </div>
+                <button class="connect-btn" onclick="openChat()">
+                    <svg viewBox="0 0 24 24"><path d="M12,2L4.5,20.29L5.21,21L12,18L18.79,21L19.5,20.29L12,2Z"/></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="chat-interface">
+        <div class="mesh-bg"></div>
+        <header>
+            <div style="display: flex; flex-direction: column;">
+                <div class="logo-text" style="color: #1a1a4b;">V.P CHAT WEB</div>
+                <div class="status-container">
+                    <span class="status-dot"></span>
+                    <span id="status-text" style="font-size: 12px; color: #555;">Online</span>
+                </div>
+            </div>
+                  <div class="header-icons" style="display:flex; gap:20px; color:#1a1a4b;">
+                  <i class="fas fa-phone-alt" onclick="startCall(false)" style="cursor:pointer;"></i>
+                  <i class="fas fa-video" onclick="startCall(true)" style="cursor:pointer;"></i>
+              </div>
+
+        </header>
+        <main id="messages-container"></main>
+        <form id="form" class="bottom-bar">
+            <div class="input-container">
+                <i class="fas fa-paperclip" id="fileBtn"
+                 style="color:#b0b9d6; transform: rotate(45deg); cursor: pointer;"></i>
+                 <input type="file" id="fileInput" hidden>
+                <input id="input" type="text" placeholder="Type a message..." autocomplete="off">
+                <button type="submit" class="send-btn">💬</button>
+            </div>
+            <div class="mic-btn" id="mic-btn" style="cursor: pointer; padding: 10px;">
+                <i class="fas fa-microphone" style="color: #1a1a4b;"></i>
+            </div>
+        </form>
+       <div id="video-grid" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:black; z-index:100; flex-direction:column; align-items:center; justify-content:center;">
+    <video id="remote-video" autoplay style="width:100%; height:100%; object-fit: cover;"></video>
+    <video id="local-video" autoplay muted style="width:120px; height:160px; position:absolute; top:20px; right:20px; border:2px solid white; border-radius:10px; object-fit: cover;"></video>
+    <button onclick="endCall()" style="position:absolute; bottom:50px; background:red; color:white; border:none; padding:15px 30px; border-radius:50px; font-weight:bold; cursor:pointer;">
+        <i class="fas fa-phone-slash"></i> End Call
+    </button>
+</div>
+    </div>
+
+    <audio id="popSound" src="https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3"></audio>
+    
+    <script>
+        const socket = io();
+        socket.on('get-peer-id', (data) => {
+        socket.emit('send-back-id', {
+        to: data.requesterSid,
+        myPeerId: myUserId
+    });
+});
+        const myUserId = Math.random().toString(36).substring(2, 9);
+        let currentRoom = "";
+        let isManualJoin = false;
+
+        const form = document.getElementById('form');
+        const input = document.getElementById('input');
+        const container = document.getElementById('messages-container');
+        const fileBtn = document.getElementById("fileBtn");
+        const fileInput = document.getElementById("fileInput");
+
+        if (fileBtn && fileInput) {
+  fileBtn.onclick = () => fileInput.click();
+}
+
+
+        fileInput.onchange = () => {
+        const file = fileInput.files[0];
+        if (!file) return;
+
+  const reader = new FileReader();
+  reader.readAsDataURL(file);
+
+  reader.onloadend = () => {
+    const data = {
+      room: currentRoom,
+      senderId: myUserId,
+      file: reader.result,
+      fileName: file.name,
+      fileType: file.type,
+      time: new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })
+    };
+
+    socket.emit('chat message', data);
+    appendMessage(data, true);
+  };
+};
+
+        const statusText = document.getElementById('status-text');
+        const popSound = document.getElementById('popSound');
+
+        window.onload = () => {
+            const display = document.getElementById('my-number-display');
+            let myCode = "";
+            for (let i = 0; i < 5; i++) {
+                const digit = Math.floor(Math.random() * 10);
+                myCode += digit;
+                const el = document.createElement('input');
+                el.className = 'line-input';
+                el.value = digit;
+                el.readOnly = true;
+                display.appendChild(el);
+            }
+        };
+
+        function openChat() {
+            const ins = document.querySelectorAll('.conn-in');
+            let codeAttempt = "";
+            ins.forEach(i => codeAttempt += i.value);
+            if (codeAttempt.length < 5) return alert("Enter 5 digits");
+            isManualJoin = true;
+            socket.emit('join room', codeAttempt);
+        }
+
+        socket.on('joined success', (roomCode) => {
+            currentRoom = roomCode;
+            if (isManualJoin) {
+                document.getElementById('landing-page').style.display = 'none';
+                document.getElementById('chat-interface').style.display = 'flex';
+            }
+        });
+            socket.on('error message', (msg) => {
+            const errorDiv = document.getElementById('room-error');
+            if (errorDiv) {
+                errorDiv.innerText = msg; // This will show "This room is full!" from the server
+                errorDiv.style.display = 'block';
+                
+                // Hide the message after 5 seconds so the user can try again
+                setTimeout(() => { 
+                    errorDiv.style.display = 'none'; 
+                }, 5000);
+            } else {
+                alert(msg); // Fallback if the HTML div isn't found [cite: 81]
+            }
+        });
+
+        socket.on('error message', (msg) => alert(msg));
+
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const text = input.value.trim();
+            if (text && currentRoom) {
+                const data = {
+                    room: currentRoom,
+                    senderId: myUserId,
+                    text: text,
+                    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                };
+                socket.emit('stop typing', { room: currentRoom });
+                socket.emit('chat message', data);
+                appendMessage(data, true); 
+                input.value = '';
+            }
+        });
+
+        socket.on('chat message', (data) => {
+            if (data.senderId !== myUserId) {
+                appendMessage(data, false); 
+                if (popSound) popSound.play();
+            }
+        });
+
+        function appendMessage(data, isMe) {
+            const wrapper = document.createElement('div');
+            wrapper.className = isMe ? 'message-wrapper sent' : 'message-wrapper received';
+            
+            let content = "";
+
+            if (data.text) {
+            content = data.text;
+            }
+            else if (data.audio) {
+            content = `<audio controls class="audio-msg"><source src="${data.audio}"></audio>`;
+             }
+           else if (data.fileType?.startsWith("image")) {
+             content = `<img src="${data.file}" style="max-width:200px;border-radius:10px;">`;
+            }
+             else if (data.fileType?.startsWith("video")) {
+              content = `<video controls style="max-width:200px;border-radius:10px;">
+               <source src="${data.file}">
+             </video>`;
+               }
+            else if (data.file) {
+            content = `<a href="${data.file}" download="${data.fileName}">📎 ${data.fileName}</a>`;
+                 }
+
+            wrapper.innerHTML = `
+                <div class="bubble">
+                    ${content}
+                    <span class="timestamp">${data.time}</span>
+                </div>
+                <div class="avatar">${isMe ? '😎' : '😊'}</div>
+            `;
+            container.appendChild(wrapper);
+            container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+        }
+
+        // --- VOICE RECORDING LOGIC ---
+        let mediaRecorder;
+        let audioChunks = [];
+        const micBtn = document.getElementById('mic-btn');
+
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = (event) => { audioChunks.push(event.data); };
+
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const reader = new FileReader();
+                    reader.readAsDataURL(audioBlob); 
+                    reader.onloadend = () => {
+                        const base64Audio = reader.result;
+                        const data = {
+                            room: currentRoom,
+                            senderId: myUserId,
+                            audio: base64Audio,
+                            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                        };
+                        socket.emit('chat message', data);
+                        appendMessage(data, true);
+                    };
+                    stream.getTracks().forEach(track => track.stop());
+                };
+
+                mediaRecorder.start();
+                micBtn.classList.add('recording');
+            } catch (err) {
+                console.error("Mic access denied or error:", err);
+                alert("Could not access microphone.");
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                mediaRecorder.stop();
+                micBtn.classList.remove('recording');
+            }
+        }
+
+        // Event Listeners for Desktop and Mobile
+        micBtn.addEventListener('mousedown', startRecording);
+        micBtn.addEventListener('mouseup', stopRecording);
+        micBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); });
+        micBtn.addEventListener('touchend', (e) => { e.preventDefault(); stopRecording(); });
+
+        // --- TYPING INDICATORS ---
+        let typingTimer;
+        input.addEventListener('input', () => {
+            socket.emit('typing', { room: currentRoom, senderId: myUserId });
+            clearTimeout(typingTimer);
+            typingTimer = setTimeout(() => socket.emit('stop typing', { room: currentRoom }), 2000);
+        });
+
+        socket.on('typing', (data) => {
+            if (data.senderId !== myUserId) {
+                statusText.innerText = "Typing...";
+                statusText.style.color = "#3e8e7e";
+            }
+        });
+
+        socket.on('stop typing', () => {
+            statusText.innerText = "Online";
+            statusText.style.color = "#555";
+        });
+
+// --- PASTE THIS NEW BLOCK HERE ---
+document.querySelectorAll('.conn-in').forEach((el, i, arr) => {
+    // 1. Move Forward when a digit is typed
+    el.addEventListener('input', () => { 
+        if (el.value.length === 1 && i < arr.length - 1) {
+            arr[i + 1].focus(); 
+        }
+    });
+
+    // 2. Move Backward when Backspace is pressed on an empty box
+    el.addEventListener('keydown', (e) => {
+        if (e.key === "Backspace" && el.value === "" && i > 0) {
+            arr[i - 1].focus();
+        }
+    });
+});
+let myPeer = new Peer(myUserId, {
+    host: '0.peerjs.com',
+    secure: true,
+    port: 443
+});
+myPeer.on('open', (id) => {
+    console.log("My Peer ID:", id);
+});
+
+ // Initialize Peer with your existing ID
+let currentCall;
+
+// Listen for incoming calls
+myPeer.on('call', async (call) => {
+    if (confirm("Incoming Call. Accept?")) {
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: call.metadata?.video || false,
+            audio: true
+        });
+
+        call.answer(stream);
+        setupVideoInterface(call, stream);
+    }
+});
+
+async function startCall(videoEnabled) {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: videoEnabled, audio: true });
+    
+    // In a 2-person room, we need to know the OTHER person's ID.
+    // For this simple version, we'll emit a "request-id" via socket
+    socket.emit('request-peer-id', { room: currentRoom });
+    
+    socket.once('peer-id-receive', (peerId) => {
+       const call = myPeer.call(peerId, stream, {
+    metadata: { video: videoEnabled }
+});
+
+        setupVideoInterface(call, stream);
+    });
+}
+
+function setupVideoInterface(call, stream) {
+    currentCall = call;
+    document.getElementById('video-grid').style.display = 'flex';
+    document.getElementById('local-video').srcObject = stream;
+
+    call.on('stream', (remoteStream) => {
+        document.getElementById('remote-video').srcObject = remoteStream;
+    });
+
+    call.on('close', () => {
+        endCall();
+    });
+}
+
+function endCall() {
+    if (currentCall) currentCall.close();
+
+    document.getElementById('video-grid').style.display = 'none';
+
+    // Stop camera + mic
+    const streams = [
+        document.getElementById('local-video').srcObject,
+        document.getElementById('remote-video').srcObject
+    ];
+
+    streams.forEach(s => s?.getTracks().forEach(t => t.stop()));
+
+    // CLEAR VIDEO BOXES (UI FIX)
+    document.getElementById('local-video').srcObject = null;
+    document.getElementById('remote-video').srcObject = null;
+}
+    </script>
+</body>
+</html>
